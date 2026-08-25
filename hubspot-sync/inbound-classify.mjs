@@ -140,6 +140,7 @@ Co-founder & CEO, Spotonix
 www.spotonix.com`;
 
 state.demoDripCount ??= 0;
+state.suppressed ??= {};
 
 function demoDripVars() {
   const variantA = state.demoDripCount % 2 === 0;
@@ -168,7 +169,82 @@ function copyFor(type, n) {
   }
 }
 
-// ---------- HubSpot ----------
+// ---------- meeting-booked suppression ----------
+async function suppressMeetingBooked() {
+  // 1. Get all meetings from HubSpot with associated contact IDs
+  let meetingsRes;
+  try {
+    meetingsRes = await hs("/objects/meetings?limit=100&associations=contacts");
+  } catch (e) {
+    log(`meeting check skipped: ${e.message.slice(0, 100)}`);
+    return { checked: 0, suppressed: 0 };
+  }
+
+  const contactIdsWithMeetings = new Set();
+  for (const m of meetingsRes.results || []) {
+    const assocs = m.associations;
+    if (!assocs) continue;
+    for (const val of Object.values(assocs)) {
+      if (val && val.results) {
+        for (const r of val.results) { if (r.id) contactIdsWithMeetings.add(String(r.id)); }
+      }
+    }
+  }
+  if (!contactIdsWithMeetings.size) return { checked: 0, suppressed: 0 };
+
+  // 2. Find enrolled contacts who have a meeting but aren't suppressed yet
+  const toSuppress = [];
+  for (const [hsId, info] of Object.entries(state.enrolled)) {
+    if (state.suppressed[hsId]) continue;
+    if (contactIdsWithMeetings.has(hsId)) toSuppress.push({ hsId, email: info.email });
+  }
+  if (!toSuppress.length) return { checked: contactIdsWithMeetings.size, suppressed: 0 };
+
+  // 3. Batch-read emails for the matching contacts
+  const emailMap = {};
+  const ids = toSuppress.map(t => t.hsId);
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const r = await hs("/objects/contacts/batch/read", {
+      method: "POST",
+      body: { inputs: chunk.map(id => ({ id })), properties: ["email"] },
+    });
+    for (const res of r.results || []) { emailMap[res.id] = res.properties.email; }
+  }
+
+  // 4. Stop in Instantly + update HubSpot
+  let count = 0;
+  for (const t of toSuppress) {
+    const email = emailMap[t.hsId];
+    if (!email) continue;
+
+    // Find and delete the lead from Instantly (stops all sends)
+    try {
+      const searchResult = await mcpInstantly("list_leads", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, search: email, limit: 1 });
+      if (searchResult.items?.length) {
+        await mcpInstantly("delete_lead", { id: searchResult.items[0].id });
+        log(`suppressed ${email} (meeting booked)`);
+      }
+    } catch (e) {
+      log(`instantly suppression failed for ${email}: ${e.message.slice(0, 80)}`);
+    }
+
+    // Update HubSpot status
+    try {
+      await hs(`/objects/contacts/${t.hsId}`, {
+        method: "PATCH",
+        body: { properties: { hs_lead_status: "CONNECTED" } },
+      });
+    } catch (e) {
+      log(`hubspot status update failed for ${email}: ${e.message.slice(0, 80)}`);
+    }
+
+    state.suppressed[t.hsId] = true;
+    count++;
+    await sleep(SLEEP_MS);
+  }
+  return { checked: contactIdsWithMeetings.size, suppressed: count };
+}
 async function hs(path_, opts = {}) {
   const method = opts.method || "GET";
   const body = opts.body != null ? JSON.stringify(opts.body) : null;
@@ -347,7 +423,11 @@ try {
   const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
   log(`enroll: ${JSON.stringify(r).slice(0, 200)}`);
 
-  for (const c of legit) state.enrolled[c.id] = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
+  // 4. suppress anyone who booked a meeting (exit - converted)
+  const supp = await suppressMeetingBooked();
+  log(`meeting-booked check: ${supp.suppressed} suppressed`);
+
+  for (const c of legit) state.enrolled[c.id] = { type: classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url), email: c.properties.email };
   fs.writeFileSync(STATE, JSON.stringify(state));
   log(JSON.stringify({ ok: true, newEnrollments: legit.length, junkSkipped: skipped.length }));
 } catch (e) {
