@@ -160,9 +160,8 @@ state.suppressed ??= {};
 state.measurement ??= { enrollments: 0, suppressedMeetings: 0, junkSkipped: 0, repliesParsed: 0 };
 state.parsedReplies ??= {};
 
-function demoDripVars() {
-  const variantA = Math.random() < 0.5;
-  state.demoDripCount++;
+function demoDripVars(variant) {
+  const variantA = variant === "A";
   return {
     d1_subject: variantA ? DEMO_D1_SUBJECT_A : DEMO_D1_SUBJECT_B,
     d1_body: DEMO_D1_BODY,
@@ -436,6 +435,7 @@ async function parseReplies() {
 
 // ---------- main ----------
 const NURTURE_LIST_ID = process.env.HS_NURTURE_LIST_ID || "25";
+const variantMap = {};
 const t0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
 
@@ -484,14 +484,20 @@ try {
     process.exit(0);
   }
 
-  // 1. tag signup type + status
-  await tagContacts(legit.map((c) => ({
-    id: c.id,
-    properties: {
-      inbound_signup_type: classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url),
-      hs_lead_status: "NEW",
-    },
-  })));
+  // 1. tag signup type + status + subject set (random A/B for native testing)
+  await tagContacts(legit.map((c) => {
+    const type = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
+    const vSet = Math.random() < 0.5 ? "A" : "B";
+    variantMap[c.id] = vSet;
+    return {
+      id: c.id,
+      properties: {
+        inbound_signup_type: type,
+        hs_lead_status: "NEW",
+        drip_subject_set: vSet,
+      },
+    };
+  }));
   log(`tagged ${legit.length}`);
 
   // 2. add to HubSpot list
@@ -501,14 +507,13 @@ try {
   // 3. enroll ALL inbound signups into the Demo Request Drip campaign (xlsx copy, A/B subjects)
   await ensureInstantlySession();
   const leads = legit.map((c) => {
-    const type = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
     const { first, last } = deriveName(c);
     return {
       email: c.properties.email,
       first_name: first,
       last_name: last || undefined,
       company_name: c.properties.company || "your team",
-      custom_variables: Object.assign(demoDripVars(), { signup_type: type }),
+      custom_variables: Object.assign(demoDripVars(variantMap[c.id] || "A"), { signup_type: type }),
     };
   });
   const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
