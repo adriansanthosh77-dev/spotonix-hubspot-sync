@@ -1,0 +1,46 @@
+name: Spotonix Inbound Classifier
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: spotonix-inbound
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore classifier state
+        uses: actions/cache/restore@v4
+        with:
+          path: .inbound-state
+          key: spotonix-inbound-state-${{ github.run_id }}
+          restore-keys: |
+            spotonix-inbound-state-
+
+      - name: Classify + enroll new inbound signups
+        env:
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+          INSTANTLY_KEY: ${{ secrets.INSTANTLY_KEY }}
+          SPOTONIX_HS_SYNC_DIR: ${{ github.workspace }}/.inbound-state
+          SYNC_FAST: "1"
+        run: node hubspot-sync/inbound-classify.mjs
+
+      - name: Save classifier state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .inbound-state
+          key: spotonix-inbound-state-${{ github.run_id }}
