@@ -118,7 +118,7 @@ async function findUnclassifiedInbound() {
       filterGroups: [{
         filters: [
           { propertyName: "hs_analytics_source", operator: "IN", values: ["DIRECT_TRAFFIC", "ORGANIC_SEARCH", "SOCIAL_MEDIA", "REFERRALS"] },
-          { propertyName: "inbound_signup_type", operator: "HAS_NO_VALUE" },
+          { propertyName: "inbound_signup_type", operator: "NOT_HAS_PROPERTY" },
         ],
       }],
       limit: 100,
