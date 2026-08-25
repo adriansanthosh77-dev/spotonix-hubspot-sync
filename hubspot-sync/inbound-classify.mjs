@@ -67,23 +67,25 @@ function deriveName(contact) {
   return { first, last };
 }
 
-// ---------- copy templates (per signup type) ----------
-const E2 = (n) => `Hey ${n}, following up once. A metric ends up with two definitions and whichever tool is in use quietly picks one. Spotonix asks which one you mean instead. If that sounds familiar, got 20 min this week for a demo?`;
-const E3 = (n) => `Hey ${n}, last one from me. If analytics trust isn't a priority right now, no worries. If it becomes one, send us your four hardest data problems and we'll set up self-service analytics your team can actually use on Spotonix without analyst time.`;
+// ---------- copy templates (per signup type, spotonix-copy skill compliant) ----------
+const BUILD = "Spotonix lets users ask data questions in plain English, shows the plan before anything runs, and grounds every answer in the definitions your team supplies";
+const E2 = (n) => `Hey ${n}, following up once. A metric ends up with two definitions and whichever tool is in use quietly picks one. Spotonix asks which definition you mean instead. Open to 20 min to see it live?`;
+const E3 = (n) => `Hey ${n}, if now isn't the right time, no worries. If it is, send us your four hardest data problems and we'll set up self-service analytics your team can actually use on Spotonix without analyst time. Reply with a day and I'll send times.`;
 
 function copyFor(type, n) {
   switch (type) {
     case "meeting_attempt":
-      return { e1_subject: "the calendar", e1_body: `Hey ${n}, you tried to grab time on my calendar a while back and it didn't go through on my end. Still happy to walk through Spotonix on your data. It resolves plain-English questions against your team's own definitions and shows the plan before anything runs. Got 20 min this week?` };
+      return { e1_subject: "the calendar", e1_body: `Hey ${n}, you tried to grab time on my calendar and it didn't go through on my end. Happy to make it happen now. ${BUILD} Got 20 min this week for a demo?` };
     case "demo_request":
-      return { e1_subject: "your demo request", e1_body: `Hey ${n}, you reached out about seeing Spotonix. Happy to make that happen. It resolves plain-English questions against your team's own definitions and shows the plan before anything runs. Got 20 min this week?` };
+      return { e1_subject: "your demo request", e1_body: `Hey ${n}, you reached out about seeing Spotonix. Happy to make that happen. ${BUILD} Got 20 min this week for a demo?` };
     case "whitepaper":
-      return { e1_subject: "the whitepaper", e1_body: `Hey ${n}, you grabbed our whitepaper on metric definitions. The short version of what we build: Spotonix asks which definition you mean before anything runs, so every answer is grounded in definitions your team controls. Worth 20 min to see it live?` };
+      return { e1_subject: "the whitepaper", e1_body: `Hey ${n}, you grabbed our whitepaper on metric definitions. As more people lean on those answers, keeping everyone on the same definitions gets harder. ${BUILD} Worth 20 min to see it live?` };
     case "product_interest":
-      return { e1_subject: "how it works", e1_body: `Hey ${n}, you went through how Spotonix works recently. Happy to show it on your own data instead. Teams ask in plain English, see the plan before anything runs, and every answer is grounded in the definitions they control. Open to 15 min this week?` };
+      return { e1_subject: "how it works", e1_body: `Hey ${n}, you went through how Spotonix works recently. Seeing it run on your own data is the better version. ${BUILD} Got 20 min this week?` };
     default:
-      return { e1_subject: "checking the fit", e1_body: `Hey ${n}, you spent some time on spotonix.com recently. If keeping everyone on the same metric definitions is a real problem for your team, worth a look. Spotonix lets teams ask in plain English and grounds every answer in the definitions they control. Got 20 min this week?` };
+      return { e1_subject: "checking the fit", e1_body: `Hey ${n}, you spent some time on spotonix.com recently. If keeping everyone on the same metric definitions is a real problem for your team, worth a look. ${BUILD} Got 20 min this week?` };
   }
+}
 }
 
 // ---------- HubSpot ----------
