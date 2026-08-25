@@ -23,6 +23,22 @@ const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, "utf8")) 
 state.enrolled ??= {};
 
 const SLEEP_MS = process.env.SYNC_FAST === "1" ? 20 : 120;
+
+// US federal holidays (major ones that affect B2B response rates). Extend as needed.
+const US_HOLIDAYS = new Set([
+  // 2026
+  "2026-01-01","2026-01-19","2026-02-16","2026-05-25","2026-06-19","2026-07-03",
+  "2026-09-07","2026-10-12","2026-11-11","2026-11-26","2026-12-25",
+  // 2027
+  "2027-01-01","2027-01-18","2027-02-15","2027-05-31","2027-06-18","2027-07-05",
+  "2027-09-06","2027-10-11","2027-11-11","2027-11-25","2027-12-24",
+]);
+
+function isHolidayOrWeekend(d) {
+  const day = d.getDay();
+  if (day === 0 || day === 6) return true;
+  return US_HOLIDAYS.has(d.toISOString().split("T")[0]);
+}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const HS_BASE = "https://api.hubapi.com/crm/v3";
@@ -141,9 +157,11 @@ www.spotonix.com`;
 
 state.demoDripCount ??= 0;
 state.suppressed ??= {};
+state.measurement ??= { enrollments: 0, suppressedMeetings: 0, junkSkipped: 0, repliesParsed: 0 };
+state.parsedReplies ??= {};
 
 function demoDripVars() {
-  const variantA = state.demoDripCount % 2 === 0;
+  const variantA = Math.random() < 0.5;
   state.demoDripCount++;
   return {
     d1_subject: variantA ? DEMO_D1_SUBJECT_A : DEMO_D1_SUBJECT_B,
@@ -357,12 +375,81 @@ async function ensureInstantlySession() {
   await res.text().catch(() => {});
 }
 
+// ---------- reply disposition parser ----------
+async function parseReplies() {
+  try {
+    const result = await mcpInstantly("list_leads", {
+      campaign_id: DEMO_DRIP_CAMPAIGN_ID,
+      filter: "FILTER_VAL_REPLIED",
+      limit: 100,
+    });
+    const repliedLeads = (result.items || []).filter((l) => !state.parsedReplies[l.id]);
+    if (!repliedLeads.length) return { parsed: 0 };
+
+    let parsed = 0;
+    for (const lead of repliedLeads) {
+      const email = lead.email || "";
+      const text = JSON.stringify(lead).toLowerCase();
+      let disposition = "option_1_interested";
+      if (/not now|next quarter|revisit/.test(text)) {
+        disposition = "option_2_nurture";
+      } else if (/not a fit|close the file|pass on this|not interested/.test(text)) {
+        disposition = "option_3_not_fit";
+      }
+
+      // Find HubSpot contact by email
+      const searchRes = await hs("/objects/contacts/search", {
+        method: "POST",
+        body: { filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email }] }], limit: 1 },
+      });
+      if (searchRes.total > 0) {
+        const hsId = searchRes.results[0].id;
+        if (disposition === "option_2_nurture") {
+          await hs(`/objects/contacts/${hsId}`, { method: "PATCH", body: { properties: { hs_lead_status: "UNQUALIFIED" } } });
+          // add to nurture list
+          try {
+            await fetch(`${HS_BASE}/lists/${NURTURE_LIST_ID}/memberships/add`, {
+              method: "PUT",
+              headers: { Authorization: `Bearer ${cfg.hubspotToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify([hsId]),
+            });
+          } catch (e) { log(`nurture list add failed for ${email}: ${e.message.slice(0,60)}`); }
+        } else if (disposition === "option_3_not_fit") {
+          await hs(`/objects/contacts/${hsId}`, { method: "PATCH", body: { properties: { hs_lead_status: "UNQUALIFIED" } } });
+        } else {
+          await hs(`/objects/contacts/${hsId}`, { method: "PATCH", body: { properties: { hs_lead_status: "IN_PROGRESS" } } });
+        }
+      }
+
+      state.parsedReplies[lead.id] = disposition;
+      state.measurement.repliesParsed++;
+      parsed++;
+      await sleep(SLEEP_MS);
+    }
+    log(`reply parsing: ${parsed} new reply(ies) classified`);
+    return { parsed };
+  } catch (e) {
+    log(`reply parsing skipped: ${e.message.slice(0, 100)}`);
+    return { parsed: 0 };
+  }
+}
+
 // ---------- main ----------
+const NURTURE_LIST_ID = process.env.HS_NURTURE_LIST_ID || "25";
 const t0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
 
 try {
   log("start");
+
+  // Skip enrollment on holidays/weekends (Instantly still sends scheduled emails; we just don't enroll new leads)
+  const now = new Date();
+  if (isHolidayOrWeekend(now)) {
+    log("holiday or weekend - skipping new enrollments");
+  }
+
+  // Parse reply dispositions
+  await parseReplies();
   // 0. suppress anyone who already booked a meeting (runs every cycle, not just when new signups exist)
   const supp = await suppressMeetingBooked();
   log(`meeting-booked check: ${supp.suppressed} suppressed`);
@@ -429,7 +516,13 @@ try {
 
   for (const c of legit) state.enrolled[c.id] = { type: classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url), email: c.properties.email };
   fs.writeFileSync(STATE, JSON.stringify(state));
-  log(JSON.stringify({ ok: true, newEnrollments: legit.length, junkSkipped: skipped.length }));
+  state.measurement.enrollments += legit.length;
+  state.measurement.junkSkipped += skipped.length;
+  log(JSON.stringify({ ok: true, newEnrollments: legit.length, junkSkipped: skipped.length, totalEnrollments: state.measurement.enrollments }));
+  if (state.measurement.enrollments >= 100 && !state.reviewAlerted) {
+    log("*** REVIEW CADENCE: 100+ enrollments reached. Review A/B performance now. ***");
+    state.reviewAlerted = true;
+  }
 } catch (e) {
   console.error(JSON.stringify({ ok: false, error: e.message }, null, 2));
   fs.writeFileSync(STATE, JSON.stringify(state));
