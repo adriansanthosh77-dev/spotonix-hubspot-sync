@@ -363,6 +363,10 @@ const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`,
 
 try {
   log("start");
+  // 0. suppress anyone who already booked a meeting (runs every cycle, not just when new signups exist)
+  const supp = await suppressMeetingBooked();
+  log(`meeting-booked check: ${supp.suppressed} suppressed`);
+
   const candidates = await findUnclassifiedInbound();
   log(`found ${candidates.length} unclassified inbound contact(s)`);
 
@@ -422,10 +426,6 @@ try {
   });
   const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
   log(`enroll: ${JSON.stringify(r).slice(0, 200)}`);
-
-  // 4. suppress anyone who booked a meeting (exit - converted)
-  const supp = await suppressMeetingBooked();
-  log(`meeting-booked check: ${supp.suppressed} suppressed`);
 
   for (const c of legit) state.enrolled[c.id] = { type: classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url), email: c.properties.email };
   fs.writeFileSync(STATE, JSON.stringify(state));
