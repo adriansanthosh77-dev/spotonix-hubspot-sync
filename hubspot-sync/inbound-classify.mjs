@@ -331,45 +331,21 @@ try {
   await addToList(legit.map((c) => c.id));
   log(`added ${legit.length} to list ${HS_LIST_ID}`);
 
-  // 3. enroll: demo_request -> CEO Demo Request Drip campaign (formal xlsx copy); others -> generic inbound campaign
+  // 3. enroll ALL inbound signups into the Demo Request Drip campaign (xlsx copy, A/B subjects)
   await ensureInstantlySession();
-  const demoLeads = [];
-  const genLeads = [];
-  for (const c of legit) {
+  const leads = legit.map((c) => {
     const type = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
     const { first, last } = deriveName(c);
-    if (type === "demo_request") {
-      demoLeads.push({
-        email: c.properties.email,
-        first_name: first,
-        last_name: last || undefined,
-        company_name: c.properties.company || undefined,
-        custom_variables: demoDripVars(),
-      });
-    } else {
-      const e1 = copyFor(type, first);
-      genLeads.push({
-        email: c.properties.email,
-        first_name: first,
-        last_name: last || undefined,
-        company_name: c.properties.company || undefined,
-        custom_variables: {
-          e1_subject: e1.e1_subject,
-          e1_body: e1.e1_body,
-          e2_body: E2(first),
-          e3_body: E3(first),
-        },
-      });
-    }
-  }
-  if (demoLeads.length) {
-    const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads: demoLeads, skip_if_in_campaign: true });
-    log(`demo drip enroll: ${JSON.stringify(r).slice(0, 200)}`);
-  }
-  if (genLeads.length) {
-    const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: INBOUND_CAMPAIGN_ID, leads: genLeads, skip_if_in_campaign: true });
-    log(`generic enroll: ${JSON.stringify(r).slice(0, 200)}`);
-  }
+    return {
+      email: c.properties.email,
+      first_name: first,
+      last_name: last || undefined,
+      company_name: c.properties.company || "your team",
+      custom_variables: Object.assign(demoDripVars(), { signup_type: type }),
+    };
+  });
+  const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
+  log(`enroll: ${JSON.stringify(r).slice(0, 200)}`);
 
   for (const c of legit) state.enrolled[c.id] = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
   fs.writeFileSync(STATE, JSON.stringify(state));
