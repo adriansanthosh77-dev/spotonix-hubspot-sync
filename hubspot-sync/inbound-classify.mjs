@@ -221,10 +221,10 @@ try {
   }
 
   if (skipped.length) {
-    await tagContacts(skipped.map((c) => ({
-      id: c.id,
-      properties: { inbound_signup_type: "general_visitor", hs_lead_status: "IGNORED" },
-    })));
+      await tagContacts(skipped.map((c) => ({
+        id: c.id,
+        properties: { inbound_signup_type: "general_visitor", hs_lead_status: "UNQUALIFIED" },
+      })));
     for (const c of skipped) state.enrolled[c.id] = "junk";
     log(`tagged+ignored ${skipped.length} junk contact(s)`);
   }
