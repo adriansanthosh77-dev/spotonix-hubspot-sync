@@ -86,7 +86,6 @@ function copyFor(type, n) {
       return { e1_subject: "checking the fit", e1_body: `Hey ${n}, you spent some time on spotonix.com recently. If keeping everyone on the same metric definitions is a real problem for your team, worth a look. ${BUILD} Got 20 min this week?` };
   }
 }
-}
 
 // ---------- HubSpot ----------
 async function hs(path_, opts = {}) {
