@@ -14,6 +14,7 @@ import path from "node:path";
 // Config + state directory. Local default: ~/.spotonix-hs-sync
 // Cloud (GitHub Actions): SPOTONIX_HS_SYNC_DIR points at a cached dir; config comes from env.
 const DIR = process.env.SPOTONIX_HS_SYNC_DIR || path.join(os.homedir(), ".spotonix-hs-sync");
+fs.mkdirSync(DIR, { recursive: true });
 const CONFIG = path.join(DIR, "config.json");
 const STATE = path.join(DIR, "state.json");
 
