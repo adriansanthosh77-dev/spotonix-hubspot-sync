@@ -1,0 +1,47 @@
+name: Spotonix HubSpot Sync
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: spotonix-hs-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore sync state (dedup)
+        uses: actions/cache/restore@v4
+        with:
+          path: .spotonix-sync-state
+          key: spotonix-hs-state-${{ github.run_id }}
+          restore-keys: |
+            spotonix-hs-state-
+
+      - name: Run sync (fast mode)
+        env:
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+          HEYREACH_MCP_KEY: ${{ secrets.HEYREACH_MCP_KEY }}
+          INSTANTLY_KEY: ${{ secrets.INSTANTLY_KEY }}
+          SPOTONIX_HS_SYNC_DIR: ${{ github.workspace }}/.spotonix-sync-state
+          SYNC_FAST: "1"
+        run: node hubspot-sync/sync-to-hubspot.mjs
+
+      - name: Save sync state (dedup)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .spotonix-sync-state
+          key: spotonix-hs-state-${{ github.run_id }}
