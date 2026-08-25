@@ -29,6 +29,7 @@ const HS_BASE = "https://api.hubapi.com/crm/v3";
 const HS_LIST_ID = process.env.HS_INBOUND_LIST_ID || "24";
 const INST_URL = "https://mcp.instantly.ai/mcp";
 const INBOUND_CAMPAIGN_ID = process.env.INSTANTLY_INBOUND_CAMPAIGN_ID || "f586fa24-4803-4d02-980e-b8217c697887";
+const DEMO_DRIP_CAMPAIGN_ID = process.env.INSTANTLY_DEMO_DRIP_CAMPAIGN_ID || "d464db3d-3975-4b02-9f6d-54968abec41c";
 
 // ---------- filters ----------
 const INTERNAL_DOMAINS = ["spotonix.com", "clea.design", "innerzeal.com"];
@@ -67,10 +68,90 @@ function deriveName(contact) {
   return { first, last };
 }
 
-// ---------- copy templates (per signup type, spotonix-copy skill compliant) ----------
+// ---------- copy templates (demo drip per Spotonix_Demo_Request_Drip_Campaign_3.xlsx; others per spotonix-copy skill) ----------
 const BUILD = "Spotonix lets users ask data questions in plain English, shows the plan before anything runs, and grounds every answer in the definitions your team supplies";
 const E2 = (n) => `Hey ${n}, following up once. A metric ends up with two definitions and whichever tool is in use quietly picks one. Spotonix asks which definition you mean instead. Open to 20 min to see it live?`;
 const E3 = (n) => `Hey ${n}, if now isn't the right time, no worries. If it is, send us your four hardest data problems and we'll set up self-service analytics your team can actually use on Spotonix without analyst time. Reply with a day and I'll send times.`;
+
+// Demo Request Drip (formal CEO voice, per xlsx): campaign steps reference {{d1_subject}}/{{d1_body}}/{{d2_body}}/{{d3_subject}}/{{d3_body}}
+const DEMO_D1_SUBJECT_A = "Thanks for signing up for Spotonix";
+const DEMO_D1_SUBJECT_B = "{{firstName}}, seeing your own data queried in plain English";
+const DEMO_D3_SUBJECT_A = "Closing the loop on your demo request";
+const DEMO_D3_SUBJECT_B = "{{firstName}}, should I keep this open?";
+const DEMO_D1_BODY = `Dear {{firstName}},
+
+Thanks for signing up for Spotonix. I am the co-founder and chief executive, and I run these demos personally.
+
+Most teams I speak with have already built a semantic layer in dbt, Looker or Power BI, yet their business users still email the data team for one-off reports and argue over conflicting numbers. Spotonix sits on top of that stack and operationalizes your existing definitions, so those users can ask questions in plain English and receive consistent, governed answers in seconds.
+
+I would propose 30 minutes in which you see your own data queried that way. My calendar:
+
+https://meetings.hubspot.com/venkatesh-seetharam
+
+If you reply with the two or three questions your stakeholders ask most often, I will build the session around them.
+
+Kind regards,
+
+Venkatesh Seetharam
+Co-founder & CEO, Spotonix
+www.spotonix.com`;
+const DEMO_D2_BODY = `Dear {{firstName}},
+
+Following my note earlier this week, the question I am asked most often is whether you could simply prompt an LLM instead.
+
+You could, but not safely:
+
+  1. A general model is prompt-based and guesses at definitions. Spotonix is plan-based and resolves against approved logic.
+  2. A general model answers differently depending on phrasing. Spotonix issues the same SQL every time.
+  3. A general model forgets. Spotonix remembers what has been accepted.
+  4. A general model is a black box. Every Spotonix answer carries a plan, a SQL hash and a named approver.
+
+My co-founder and I created Apache Atlas, the first open-source metadata catalog; Bob Muglia, formerly chief executive of Snowflake, advises us. Governed meaning is not a feature we added late.
+
+Based on industry discovery and pilot deployments, cycle times fall by 50 to 70 percent and analyst throughput rises by 40 to 70 percent.
+
+Thirty minutes, on your data: https://meetings.hubspot.com/venkatesh-seetharam
+
+Kind regards,
+
+Venkatesh Seetharam
+Co-founder & CEO, Spotonix
+www.spotonix.com`;
+const DEMO_D3_BODY = `Dear {{firstName}},
+
+I have written twice about the demo you requested without finding a time, which I appreciate may be a question of bandwidth rather than interest.
+
+It is a smaller first step than it may appear: no rip-and-replace, one business domain, a two-to-four week deployment alongside Tableau, Looker or Power BI.
+
+So as not to occupy your inbox further, would you reply with whichever applies:
+
+  1. Send times - I would like to see this on our data.
+  2. Not now - please revisit next quarter.
+  3. Not a fit - please close the file.
+
+The third will be respected without further follow-up. For the first, my calendar is here: https://meetings.hubspot.com/venkatesh-seetharam
+
+Thank you either way.
+
+Kind regards,
+
+Venkatesh Seetharam
+Co-founder & CEO, Spotonix
+www.spotonix.com`;
+
+state.demoDripCount ??= 0;
+
+function demoDripVars() {
+  const variantA = state.demoDripCount % 2 === 0;
+  state.demoDripCount++;
+  return {
+    d1_subject: variantA ? DEMO_D1_SUBJECT_A : DEMO_D1_SUBJECT_B,
+    d1_body: DEMO_D1_BODY,
+    d2_body: DEMO_D2_BODY,
+    d3_subject: variantA ? DEMO_D3_SUBJECT_A : DEMO_D3_SUBJECT_B,
+    d3_body: DEMO_D3_BODY,
+  };
+}
 
 function copyFor(type, n) {
   switch (type) {
@@ -250,28 +331,45 @@ try {
   await addToList(legit.map((c) => c.id));
   log(`added ${legit.length} to list ${HS_LIST_ID}`);
 
-  // 3. enroll in Instantly follow-up campaign
+  // 3. enroll: demo_request -> CEO Demo Request Drip campaign (formal xlsx copy); others -> generic inbound campaign
   await ensureInstantlySession();
-  const leads = legit.map((c) => {
+  const demoLeads = [];
+  const genLeads = [];
+  for (const c of legit) {
     const type = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
     const { first, last } = deriveName(c);
-    const e1 = copyFor(type, first);
-    return {
-      email: c.properties.email,
-      first_name: first,
-      last_name: last || undefined,
-      company_name: c.properties.company || undefined,
-      payload: { firstName: first, lastName: last || "", companyName: c.properties.company || "" },
-      custom_variables: {
-        e1_subject: e1.e1_subject,
-        e1_body: e1.e1_body,
-        e2_body: E2(first),
-        e3_body: E3(first),
-      },
-    };
-  });
-  const result = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: INBOUND_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
-  log(`instantly enroll: ${JSON.stringify(result).slice(0, 300)}`);
+    if (type === "demo_request") {
+      demoLeads.push({
+        email: c.properties.email,
+        first_name: first,
+        last_name: last || undefined,
+        company_name: c.properties.company || undefined,
+        custom_variables: demoDripVars(),
+      });
+    } else {
+      const e1 = copyFor(type, first);
+      genLeads.push({
+        email: c.properties.email,
+        first_name: first,
+        last_name: last || undefined,
+        company_name: c.properties.company || undefined,
+        custom_variables: {
+          e1_subject: e1.e1_subject,
+          e1_body: e1.e1_body,
+          e2_body: E2(first),
+          e3_body: E3(first),
+        },
+      });
+    }
+  }
+  if (demoLeads.length) {
+    const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads: demoLeads, skip_if_in_campaign: true });
+    log(`demo drip enroll: ${JSON.stringify(r).slice(0, 200)}`);
+  }
+  if (genLeads.length) {
+    const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: INBOUND_CAMPAIGN_ID, leads: genLeads, skip_if_in_campaign: true });
+    log(`generic enroll: ${JSON.stringify(r).slice(0, 200)}`);
+  }
 
   for (const c of legit) state.enrolled[c.id] = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
   fs.writeFileSync(STATE, JSON.stringify(state));
