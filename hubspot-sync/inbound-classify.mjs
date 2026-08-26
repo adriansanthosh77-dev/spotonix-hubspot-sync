@@ -512,7 +512,7 @@ try {
     return {
       email: c.properties.email,
       first_name: first,
-      last_name: last || undefined,
+      last_name: last || null,
       company_name: c.properties.company || "your team",
       custom_variables: Object.assign(demoDripVars(variantMap[c.id] || "A")),
     };
