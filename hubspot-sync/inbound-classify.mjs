@@ -504,21 +504,37 @@ try {
   await addToList(legit.map((c) => c.id));
   log(`added ${legit.length} to list ${HS_LIST_ID}`);
 
-  // 3. enroll ALL inbound signups into the Demo Request Drip campaign (xlsx copy, A/B subjects)
+  // 3. enroll ALL inbound signups: bulk add basic info first, then set copy vars individually
   await ensureInstantlySession();
   const leads = legit.map((c) => {
-    const cType = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
     const { first, last } = deriveName(c);
     return {
       email: c.properties.email,
       first_name: first,
       last_name: last || null,
       company_name: c.properties.company || "your team",
-      custom_variables: Object.assign(demoDripVars(variantMap[c.id] || "A")),
     };
   });
-  const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads });
-  log(`enroll: ${JSON.stringify(r).slice(0, 200)}`);
+  const addResult = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads });
+  log(`bulk add: ${JSON.stringify(addResult).slice(0, 200)}`);
+
+  // Set copy custom variables per lead (separate small calls to avoid payload limits)
+  const createdMap = {};
+  for (const cl of (addResult.created_leads || [])) { createdMap[cl.email] = cl.id; }
+  for (const c of legit) {
+    const email = c.properties.email;
+    const instId = createdMap[email];
+    if (!instId) continue;
+    const type = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
+    const variant = variantMap[c.id] || "A";
+    const dv = demoDripVars(variant);
+    try {
+      await mcpInstantly("update_lead", { id: instId, custom_variables: dv });
+      await sleep(SLEEP_MS);
+    } catch (e) {
+      log(`copy update failed for ${email}: ${e.message.slice(0, 80)}`);
+    }
+  }
 
   for (const c of legit) state.enrolled[c.id] = { type: classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url), email: c.properties.email };
   fs.writeFileSync(STATE, JSON.stringify(state));
