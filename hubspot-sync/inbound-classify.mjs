@@ -517,7 +517,7 @@ try {
       custom_variables: Object.assign(demoDripVars(variantMap[c.id] || "A")),
     };
   });
-  const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
+  const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads });
   log(`enroll: ${JSON.stringify(r).slice(0, 200)}`);
 
   for (const c of legit) state.enrolled[c.id] = { type: classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url), email: c.properties.email };
