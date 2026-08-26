@@ -507,13 +507,14 @@ try {
   // 3. enroll ALL inbound signups into the Demo Request Drip campaign (xlsx copy, A/B subjects)
   await ensureInstantlySession();
   const leads = legit.map((c) => {
+    const cType = classify(c.properties.hs_analytics_first_url, c.properties.hs_analytics_last_url);
     const { first, last } = deriveName(c);
     return {
       email: c.properties.email,
       first_name: first,
       last_name: last || undefined,
       company_name: c.properties.company || "your team",
-      custom_variables: Object.assign(demoDripVars(variantMap[c.id] || "A"), { signup_type: type }),
+      custom_variables: Object.assign(demoDripVars(variantMap[c.id] || "A"), { signup_type: cType }),
     };
   });
   const r = await mcpInstantly("add_leads_to_campaign_or_list_bulk", { campaign_id: DEMO_DRIP_CAMPAIGN_ID, leads, skip_if_in_campaign: true });
