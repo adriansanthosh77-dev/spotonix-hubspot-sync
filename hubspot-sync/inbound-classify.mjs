@@ -85,11 +85,6 @@ function deriveName(contact) {
 }
 
 // ---------- copy templates (demo drip per Spotonix_Demo_Request_Drip_Campaign_3.xlsx; others per spotonix-copy skill) ----------
-const BUILD = "Spotonix lets users ask data questions in plain English, shows the plan before anything runs, and grounds every answer in the definitions your team supplies.";
-const E2 = (n) => `Hey ${n}, following up once. A metric ends up with two definitions and whichever tool is in use quietly picks one. Spotonix asks which definition you mean instead. Open to 20 min to see it live?`;
-const E3 = (n) => `Hey ${n}, if now isn't the right time, no worries. If it is, send us your four hardest data problems and we'll set up self-service analytics your team can actually use on Spotonix without analyst time. Reply with a day and I'll send times.`;
-
-// Demo Request Drip (formal CEO voice, per xlsx): campaign steps reference {{d1_subject}}/{{d1_body}}/{{d2_body}}/{{d3_subject}}/{{d3_body}}
 const DEMO_D1_SUBJECT_A = "Thanks for signing up for Spotonix";
 const DEMO_D1_SUBJECT_B = "{{firstName}}, seeing your own data queried in plain English";
 const DEMO_D3_SUBJECT_A = "Closing the loop on your demo request";
@@ -100,9 +95,7 @@ Thanks for signing up for Spotonix. I am the co-founder and chief executive, and
 
 Most teams I speak with have already built a semantic layer in dbt, Looker or Power BI, yet their business users still email the data team for one-off reports and argue over conflicting numbers. Spotonix sits on top of that stack and operationalizes your existing definitions, so those users can ask questions in plain English and receive consistent, governed answers in seconds.
 
-I would propose 30 minutes in which you see your own data queried that way. My calendar:
-
-https://meetings.hubspot.com/venkatesh-seetharam
+I would propose 30 minutes in which you see your own data queried that way. My calendar: https://meetings.hubspot.com/venkatesh-seetharam
 
 If you reply with the two or three questions your stakeholders ask most often, I will build the session around them.
 
@@ -171,20 +164,7 @@ function demoDripVars(variant) {
   };
 }
 
-function copyFor(type, n) {
-  switch (type) {
-    case "meeting_attempt":
-      return { e1_subject: "the calendar", e1_body: `Hey ${n}, you tried to grab time on my calendar and it didn't go through on my end. Happy to make it happen now. ${BUILD} Got 20 min this week for a demo?` };
-    case "demo_request":
-      return { e1_subject: "your demo request", e1_body: `Hey ${n}, you reached out about seeing Spotonix. Happy to make that happen. ${BUILD} Got 20 min this week for a demo?` };
-    case "whitepaper":
-      return { e1_subject: "the whitepaper", e1_body: `Hey ${n}, you grabbed our whitepaper on metric definitions. As more people lean on those answers, keeping everyone on the same definitions gets harder. ${BUILD} Worth 20 min to see it live?` };
-    case "product_interest":
-      return { e1_subject: "how it works", e1_body: `Hey ${n}, you went through how Spotonix works recently. Seeing it run on your own data is the better version. ${BUILD} Got 20 min this week?` };
-    default:
-      return { e1_subject: "checking the fit", e1_body: `Hey ${n}, you spent some time on spotonix.com recently. If keeping everyone on the same metric definitions is a real problem for your team, worth a look. ${BUILD} Got 20 min this week?` };
-  }
-}
+
 
 // ---------- meeting-booked suppression ----------
 async function suppressMeetingBooked() {
