@@ -1,0 +1,45 @@
+name: Spotonix LinkedIn Stage Mover
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: spotonix-stage-mover
+  cancel-in-progress: false
+
+jobs:
+  move:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore mover state (dedup)
+        uses: actions/cache/restore@v4
+        with:
+          path: .spotonix-stage-state
+          key: spotonix-stage-${{ github.run_id }}
+          restore-keys: |
+            spotonix-stage-
+
+      - name: Run stage mover (fast mode)
+        env:
+          HEYREACH_MCP_KEY: ${{ secrets.HEYREACH_MCP_KEY }}
+          SPOTONIX_HS_SYNC_DIR: ${{ github.workspace }}/.spotonix-stage-state
+          SYNC_FAST: "1"
+        run: node hubspot-sync/linkedin-stage-mover.mjs
+
+      - name: Save mover state (dedup)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .spotonix-stage-state
+          key: spotonix-stage-${{ github.run_id }}
