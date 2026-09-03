@@ -23,6 +23,9 @@ const cfg = (process.env.HUBSPOT_TOKEN && process.env.HEYREACH_MCP_KEY && proces
       hubspotToken: process.env.HUBSPOT_TOKEN,
       heyreachMcpKey: process.env.HEYREACH_MCP_KEY,
       instantlyKey: process.env.INSTANTLY_KEY,
+      // beehiiv uses the same config path; env in cloud, config.json locally
+      beehiivKey: process.env.BEEHIIV_API_KEY || null,
+      beehiivPubId: process.env.BEEHIIV_PUBLICATION_ID || null,
     }
   : JSON.parse(fs.readFileSync(CONFIG, "utf8"));
 const state = fs.existsSync(STATE) ? JSON.parse(fs.readFileSync(STATE, "utf8")) : {};
@@ -351,11 +354,83 @@ async function pullInstantly() {
   }
 }
 
+// ---------- beehiiv (newsletter subscribers -> HubSpot) ----------
+const BEEHIIV_NEWSLETTER_LIST_ID = "26"; // HubSpot list: Newsletter – MEANING GAP
+let beehiivContacts = 0;
+
+async function pullBeehiiv() {
+  if (!cfg.beehiivKey || !cfg.beehiivPubId) {
+    log("beehiiv skipped: no BEEHIIV_API_KEY / BEEHIIV_PUBLICATION_ID");
+    return;
+  }
+  state.beehiivEmails ??= {}; // idempotency: emails already synced
+
+  // 1. Pull active subscribers from beehiiv REST API
+  const url = `https://api.beehiiv.com/v2/publications/${encodeURIComponent(cfg.beehiivPubId)}/subscriptions?limit=100&page=0`;
+  let res;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${cfg.beehiivKey}`, Accept: "application/json" } });
+  } catch (e) {
+    log(`beehiiv fetch failed: ${e.message}`);
+    return;
+  }
+  if (!res.ok) {
+    log(`beehiiv HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return;
+  }
+  const data = await res.json();
+  const active = (data.data || []).filter((s) => s.status === "active");
+
+  // 2. Upsert each active subscriber as a HubSpot contact
+  for (const sub of active) {
+    const email = sub.email;
+    if (!email || state.beehiivEmails[email]) continue;
+    const props = {
+      email,
+      newsletter_source: "beehiiv",
+      beehiiv_subscriber: "true",
+      ...(sub.created ? { hs_createdate: String(Date.parse(sub.created) || Date.now()) } : {}),
+    };
+    try {
+      const id = await upsertContact({ email, linkedinUrl: null, props });
+      if (id) {
+        beehiivContacts++;
+        state.beehiivEmails[email] = true;
+        await sleep(SLEEP_MS);
+      }
+    } catch (e) {
+      log(`beehiiv contact ${email} failed: ${e.message}`);
+    }
+  }
+
+  // 3. Sync list membership: find contact IDs for new subscribers and add to list 26
+  const newEmails = active.map((s) => s.email).filter((e) => e);
+  const memberIds = [];
+  for (const email of newEmails) {
+    try {
+      const id = await findContact({ email, linkedinUrl: null });
+      if (id) memberIds.push(id);
+    } catch { /* skip */ }
+  }
+  if (memberIds.length) {
+    try {
+      // Working shape (verified): PUT /memberships/add with {"recordIds": [...]}
+      const r = await hs(`/lists/${BEEHIIV_NEWSLETTER_LIST_ID}/memberships/add`, {
+        method: "PUT",
+        body: { recordIds: memberIds },
+      });
+      log(`beehiiv list membership add -> ${r?.recordsIdsAdded?.length ?? memberIds.length} members`);
+    } catch (e) {
+      log(`beehiiv list membership failed: ${e.message}`);
+    }
+  }
+}
+
 // ---------- main ----------
 const t0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
 const progress = (label) => {
-  log(`${label} -> hr contacts=${hrContacts} hr notes=${hrNotes} inst contacts=${instContacts} inst notes=${instNotes}`);
+  log(`${label} -> hr contacts=${hrContacts} hr notes=${hrNotes} inst contacts=${instContacts} inst notes=${instNotes} beehiiv contacts=${beehiivContacts}`);
 };
 const progTimer = setInterval(() => progress("progress"), 20000);
 
@@ -367,13 +442,16 @@ try {
   fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
   progress("heyreach done");
   await pullInstantly();
-  state.lastRunStart = null;
   fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
   progress("instantly done");
+  await pullBeehiiv();
+  state.lastRunStart = null;
+  fs.writeFileSync(STATE, JSON.stringify(state, null, 2));
+  progress("beehiiv done");
   clearInterval(progTimer);
   log(
-    JSON.stringify({ ok: true, propsCreated, hrContacts, hrNotes, instContacts, instNotes,
-      hrSeen: Object.keys(state.hrNotesSeen).length, instSeen: Object.keys(state.instEmailsSeen).length }, null, 2)
+    JSON.stringify({ ok: true, propsCreated, hrContacts, hrNotes, instContacts, instNotes, beehiivContacts,
+      hrSeen: Object.keys(state.hrNotesSeen).length, instSeen: Object.keys(state.instEmailsSeen).length, beehiivSeen: Object.keys(state.beehiivEmails ?? {}).length }, null, 2)
   );
 } catch (e) {
   clearInterval(progTimer);

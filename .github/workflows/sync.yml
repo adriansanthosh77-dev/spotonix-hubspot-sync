@@ -35,6 +35,8 @@ jobs:
           HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           HEYREACH_MCP_KEY: ${{ secrets.HEYREACH_MCP_KEY }}
           INSTANTLY_KEY: ${{ secrets.INSTANTLY_KEY }}
+          BEEHIIV_API_KEY: ${{ secrets.BEEHIIV_API_KEY }}
+          BEEHIIV_PUBLICATION_ID: ${{ secrets.BEEHIIV_PUBLICATION_ID }}
           SPOTONIX_HS_SYNC_DIR: ${{ github.workspace }}/.spotonix-sync-state
           SYNC_FAST: "1"
         run: node hubspot-sync/sync-to-hubspot.mjs
