@@ -165,6 +165,7 @@ async function ensureContactProps() {
     { name: "inst_campaign", label: "Instantly Campaign", type: "string", fieldType: "text" },
     { name: "inst_status", label: "Instantly Status", type: "string", fieldType: "text" },
     { name: "inst_interest_status", label: "Instantly Interest", type: "string", fieldType: "text" },
+    { name: "icp_friendly", label: "ICP Segment", type: "string", fieldType: "text", description: "Friendly ICP segment name for lead understanding" },
   ];
   const existing = new Set((await hs("/properties/contacts?limit=200")).results.map((p) => p.name));
   for (const d of defs) {
@@ -173,6 +174,28 @@ async function ensureContactProps() {
     propsCreated++;
     await sleep(SLEEP_MS);
   }
+}
+
+// Friendly ICP segment mapping for HubSpot icp_friendly property.
+// Convert campaign names (Instantly + HeyReach) into easy-to-read segment labels.
+const ICP_FRIENDLY = [
+  ["Finance & Fintech", ["fintech", "crypto", "payments", "financial", "nbfi", "bank"]],
+  ["AdTech & Media", ["adtech", "performance marketing", "gaming"]],
+  ["Modern Data Stack", ["snowflake", "dbt", "data stack"]],
+  ["Enterprise AI", ["enterprise", "ai mandate"]],
+  ["Data-Forward SaaS", ["data-forward", "scale-ups", "series b", "series c"]],
+  ["CEO/Founder Track", ["ceo 77", "ceo77", "founder"]],
+  ["Investor Portfolio", ["investor", "portfolio"]],
+  ["Inbound/Demo", ["demo", "inbound", "drip", "signup"]],
+  ["Technical Buyer", ["technical buyer", "cxo", "bizops"]],
+];
+function icpFriendly(campaignName) {
+  const n = (campaignName || "").toLowerCase();
+  if (!n) return null;
+  for (const [label, kws] of ICP_FRIENDLY) {
+    if (kws.some((k) => n.includes(k))) return label;
+  }
+  return null;
 }
 
 async function findContact({ email, linkedinUrl }) {
@@ -247,6 +270,7 @@ async function pullHeyReach() {
             company: p.companyName,
             hr_campaign: c.name,
             hr_status: lead.leadCampaignStatus || c.status,
+            icp_friendly: icpFriendly(c.name),
           };
           const id = await upsertContact({ email, linkedinUrl: url, props });
           if (id) hrContacts++;
@@ -322,6 +346,7 @@ async function pullInstantly() {
             inst_campaign: c.name,
             inst_status: lead.status ? String(lead.status) : null,
             inst_interest_status: lead.interest_status ? String(lead.interest_status) : null,
+            icp_friendly: icpFriendly(c.name),
           };
           const id = await upsertContact({ email, linkedinUrl: null, props });
           if (id) instContacts++;
