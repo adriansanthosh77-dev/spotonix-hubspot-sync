@@ -184,6 +184,20 @@ async function main() {
   } catch (e) { results.errors.push(`msg list: ${e.message}`); }
 
   const fresh = toAdd.filter((a) => !inMsgList.has(a.url));
+
+  // DM gate (2026-09-05, user directive): DMs only Mon-Fri. Don't add to the
+  // MESSAGE list on weekends, so 580855 only fires DMs on weekdays. Accepted leads
+  // queue up locally (stage-state) and get added on the next weekday run.
+  const now = new Date();
+  const day = now.getUTCDay();
+  const isWeekend = day === 0 || day === 6;
+  if (isWeekend) {
+    results.addedToMessage = [];
+    results.weekendGate = true;
+    results.queuedAccepted = fresh.map((a) => a.url);
+    console.log(JSON.stringify(results, null, 2));
+    return;
+  }
   results.addedToMessage = fresh;
 
   if (fresh.length) {
