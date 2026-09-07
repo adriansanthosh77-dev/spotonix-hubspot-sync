@@ -153,7 +153,7 @@ async function main() {
 
   // Also scan old/paused campaigns for accepted-without-message (backfill)
   const acceptedPool = [];
-  for (const cid of [573277, 573278, 573279, 573280, 573281, 573289, 573310, 573311, 573312, 573313, 573314, 559676]) {
+  for (const cid of [573277, 573278, 573279, 573280, 573281, 573289, 573310, 573311, 573312, 573313, 573314, 559676, 573287, 573290, 565076, 573291]) {
     try {
       const leads = await campaignLeads(cid);
       const accepted = leads.filter((l) => l.leadConnectionStatus === "ConnectionAccepted" && !["MessageSent", "Sent"].includes(l.leadMessageStatus));
