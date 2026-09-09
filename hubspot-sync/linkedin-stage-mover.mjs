@@ -183,7 +183,30 @@ async function main() {
     inMsgList = new Set(ml.map((l) => (l.profileUrl || "").replace(/\/$/, "")));
   } catch (e) { results.errors.push(`msg list: ${e.message}`); }
 
-  const fresh = toAdd.filter((a) => !inMsgList.has(a.url));
+  // ONE MESSAGE RULE (2026-09-09, user directive): nobody gets a 2nd DM.
+  // Build the set of profile URLs we have ALREADY messaged (any conversation where
+  // a message from "ME" exists, regardless of which campaign created it), and skip
+  // them here. This prevents the double-send that hit Abeyan/Govind on Sep 8
+  // (they'd been messaged in old campaigns, then the backfill added them again).
+  let alreadyMessaged = new Set();
+  try {
+    for (let off = 0; off < 10; off++) {
+      const page = await hrCall("get_conversations_v2", { limit: 100, offset: off });
+      const items = page.items || [];
+      for (const conv of items) {
+        const cp = conv.correspondentProfile || {};
+        const url = (cp.profileUrl || "").replace(/\/$/, "");
+        if (!url) continue;
+        const hasMyMsg = (conv.messages || []).some((m) => m.sender === "ME");
+        if (hasMyMsg) alreadyMessaged.add(url);
+      }
+      if (items.length < 100) break;
+      await sleep(100);
+    }
+  } catch (e) { results.errors.push(`conv scan: ${e.message}`); }
+  results.alreadyMessaged = alreadyMessaged.size;
+
+  const fresh = toAdd.filter((a) => !inMsgList.has(a.url) && !alreadyMessaged.has(a.url));
 
   // DM gate (2026-09-05, user directive): DMs only Mon-Fri. Don't add to the
   // MESSAGE list on weekends, so 580855 only fires DMs on weekdays. Accepted leads
